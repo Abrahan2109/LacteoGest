@@ -1,0 +1,8 @@
+/* Archivo mínimo para satisfacer el enlace en index.html */
+/* Puedes mover estilos aquí si lo prefieres */
+:root {
+  color-scheme: light;
+}
+body {
+  margin: 0;
+}

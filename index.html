@@ -1,0 +1,55 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ABBA FOODS - Gestión Agroindustrial</title>
+    
+    <!-- PWA Meta Tags -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#67291d">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="ABBA FOODS">
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/3050/3050111.png">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              brand: '#67291d',
+              accent: '#e1ad80',
+              dark: '#000000',
+              surface: '#ffffff',
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+        body { 
+          font-family: 'Inter', sans-serif; 
+          background-color: #fcfaf9;
+          /* Evitar scroll horizontal y mejorar UX móvil */
+          overflow-x: hidden;
+          -webkit-tap-highlight-color: transparent;
+        }
+        /* Estilo para que la app se vea bien en pantallas con "notch" (iPhone) */
+        main {
+          padding-top: env(safe-area-inset-top);
+          padding-bottom: env(safe-area-inset-bottom);
+        }
+    </style>
+<link rel="stylesheet" href="/index.css">
+</head>
+<body class="text-slate-900 overflow-x-hidden">
+    <div id="root"></div>
+<script type="module" src="/index.tsx"></script>
+</body>
+</html>

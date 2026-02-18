@@ -1,0 +1,7 @@
+{
+  "name": "LácteoGest - Gestión Agroindustrial",
+  "description": "Aplicación híbrida para la gestión integral de producción, inventario y ventas en plantas lácteas pequeñas y medianas.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
