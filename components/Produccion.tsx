@@ -1,30 +1,66 @@
 
-import React, { useState, useMemo } from 'react';
-import { ProductionOrder, Recipe, RawMaterial } from '../types';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Recipe, RawMaterial } from '../types';
+import { hasSupabaseEnv, supabase } from '../supabaseClient';
 
 const Produccion: React.FC = () => {
   const [milkVolume, setMilkVolume] = useState<number>(0);
-  const [selectedRecipeId, setSelectedRecipeId] = useState<string>('1');
+  const [selectedRecipeId, setSelectedRecipeId] = useState<string>('');
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState<boolean>(false);
 
-  // Datos de stock para comparación (Mock)
-  const stock: RawMaterial[] = [
-    { id: 'm1', name: 'Cultivo Láctico', provider: 'BioDairy', quantity: 3, unit: 'Sobres', expiryDate: '2025', type: 'insumo', minThreshold: 5 },
-    { id: 'm2', name: 'Leche en Polvo', provider: 'DairyGold', quantity: 5000, unit: 'gr', expiryDate: '2025', type: 'insumo', minThreshold: 1000 },
-    { id: 'm10', name: 'Leche Cruda', provider: 'Hacienda', quantity: 150, unit: 'L', expiryDate: '2025', type: 'leche', minThreshold: 50 }
-  ];
+  const [stock, setStock] = useState<RawMaterial[]>([]);
+  const [formulas, setFormulas] = useState<Recipe[]>([]);
 
-  const formulas: Recipe[] = [
-    {
-      id: '1',
-      name: 'Yogur Griego Base',
-      baseMilk: 1,
-      ingredients: [
-        { materialId: 'm1', materialName: 'Cultivo Láctico', amountPerLiter: 0.05, unit: 'Sobres' },
-        { materialId: 'm2', materialName: 'Leche en Polvo (Refuerzo)', amountPerLiter: 30, unit: 'gr' }
-      ],
-      notes: ''
-    }
-  ];
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        if (hasSupabaseEnv && supabase) {
+          const matsRes = await supabase.from('materials').select('id,name,provider,quantity,unit,expiry_date,type,min_threshold');
+          if (matsRes.error) throw new Error(matsRes.error.message);
+          const mappedMats: RawMaterial[] = (matsRes.data || []).map((m:any)=>({
+            id: m.id,
+            name: m.name,
+            provider: m.provider ?? '',
+            quantity: Number(m.quantity ?? 0),
+            unit: m.unit ?? '',
+            expiryDate: m.expiry_date ? String(m.expiry_date) : 'N/A',
+            type: m.type,
+            minThreshold: Number(m.min_threshold ?? 0),
+          }));
+          setStock(mappedMats);
+          const recRes = await supabase.from('recipes').select('id,name,recipe_ingredients(id,material_name,amount_per_liter,unit)');
+          if (recRes.error) throw new Error(recRes.error.message);
+          const mappedRecipes: Recipe[] = (recRes.data || []).map((r:any)=>({
+            id: r.id,
+            name: r.name,
+            baseMilk: 1,
+            ingredients: (r.recipe_ingredients || []).map((ing:any)=>({
+              materialId: ing.material_id || '',
+              materialName: ing.material_name || '',
+              amountPerLiter: Number(ing.amount_per_liter || 0),
+              unit: ing.unit || '',
+            })),
+            notes: ''
+          }));
+          setFormulas(mappedRecipes);
+          if (!selectedRecipeId && mappedRecipes[0]?.id) setSelectedRecipeId(mappedRecipes[0].id);
+        } else {
+          setStock([]);
+          setFormulas([]);
+        }
+      } catch (e:any) {
+        setError(e.message || 'Error cargando datos');
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const currentRecipe = useMemo(() => formulas.find(f => f.id === selectedRecipeId), [selectedRecipeId]);
 
@@ -53,6 +89,9 @@ const Produccion: React.FC = () => {
           <p className="text-slate-500">Órdenes de Producción</p>
         </div>
       </div>
+
+      {loading && <div className="p-4 bg-white rounded-2xl border text-sm">Cargando…</div>}
+      {!loading && error && <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded-2xl text-sm">{error}</div>}
 
       {/* Calculadora de Requerimientos */}
       <div className="bg-white p-6 rounded-2xl border-2 border-brand/10 shadow-sm space-y-6">
@@ -118,10 +157,33 @@ const Produccion: React.FC = () => {
             </div>
 
             <button 
-              disabled={isMilkShort || requirements.some(r => r.isShort)}
+              disabled={saving || !hasSupabaseEnv || isMilkShort || requirements.some(r => r.isShort) || !currentRecipe}
+              onClick={async ()=>{
+                if (!hasSupabaseEnv || !supabase || !currentRecipe) return;
+                setSaving(true);
+                setError(null);
+                try {
+                  const batch = `BATCH-${new Date().toISOString().replace(/[-:T]/g,'').slice(0,12)}`;
+                  const payload = {
+                    recipe_id: currentRecipe.id,
+                    date: new Date().toISOString().slice(0,10),
+                    batch,
+                    status: 'en_proceso',
+                    milk_volume: milkVolume,
+                    quantity_produced: 0,
+                    waste: 0
+                  };
+                  const { error } = await supabase.from('production_orders').insert(payload);
+                  if (error) throw new Error(error.message);
+                } catch (e:any) {
+                  setError(e.message || 'No se pudo crear la orden');
+                } finally {
+                  setSaving(false);
+                }
+              }}
               className="w-full mt-6 bg-brand text-white font-bold py-4 rounded-2xl shadow-xl shadow-brand/20 hover:bg-black transition-all disabled:bg-slate-300 disabled:shadow-none uppercase tracking-widest text-sm"
             >
-              Lanzar Orden de Producción
+              {saving ? 'Guardando…' : 'Lanzar Orden de Producción'}
             </button>
           </div>
         )}

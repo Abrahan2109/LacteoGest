@@ -1,14 +1,60 @@
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { RawMaterial } from '../types';
+import { supabase, hasSupabaseEnv } from '../supabaseClient';
 
 const MateriaPrima: React.FC = () => {
-  const [materials] = useState<RawMaterial[]>([
-    { id: '1', name: 'Leche Cruda', provider: 'Hacienda La Gloria', quantity: 8, unit: 'L', expiryDate: '2024-10-25', type: 'leche', minThreshold: 10 },
-    { id: '2', name: 'Cuajo Líquido', provider: 'BioDairy S.A.', quantity: 2.5, unit: 'L', expiryDate: '2025-01-15', type: 'insumo', minThreshold: 1 },
-    { id: '3', name: 'Cultivo Láctico', provider: 'BioDairy S.A.', quantity: 3, unit: 'Sobres', expiryDate: '2025-02-20', type: 'insumo', minThreshold: 5 },
-    { id: '4', name: 'Envase Yogurt 1L', provider: 'PackMaster', quantity: 500, unit: 'Uds', expiryDate: 'N/A', type: 'empaque', minThreshold: 100 },
-  ]);
+  const [materials, setMaterials] = useState<RawMaterial[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  const [showForm, setShowForm] = useState<boolean>(false);
+  const [saving, setSaving] = useState<boolean>(false);
+  const [form, setForm] = useState({
+    name: '',
+    provider: '',
+    quantity: '',
+    unit: '',
+    expiry_date: '',
+    type: 'insumo',
+    min_threshold: '',
+  });
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      setError(null);
+      if (hasSupabaseEnv && supabase) {
+        const { data, error } = await supabase
+          .from('materials')
+          .select('id,name,provider,quantity,unit,expiry_date,type,min_threshold')
+          .order('name', { ascending: true });
+        if (error) {
+          setError(error.message);
+        } else {
+          const mapped: RawMaterial[] = (data || []).map((m: any) => ({
+            id: m.id,
+            name: m.name,
+            provider: m.provider ?? '',
+            quantity: Number(m.quantity ?? 0),
+            unit: m.unit ?? '',
+            expiryDate: m.expiry_date ? String(m.expiry_date) : 'N/A',
+            type: m.type,
+            minThreshold: Number(m.min_threshold ?? 0),
+          }));
+          setMaterials(mapped);
+        }
+      } else {
+        setMaterials([
+          { id: '1', name: 'Leche Cruda', provider: 'Hacienda La Gloria', quantity: 8, unit: 'L', expiryDate: '2024-10-25', type: 'leche', minThreshold: 10 },
+          { id: '2', name: 'Cuajo Líquido', provider: 'BioDairy S.A.', quantity: 2.5, unit: 'L', expiryDate: '2025-01-15', type: 'insumo', minThreshold: 1 },
+          { id: '3', name: 'Cultivo Láctico', provider: 'BioDairy S.A.', quantity: 3, unit: 'Sobres', expiryDate: '2025-02-20', type: 'insumo', minThreshold: 5 },
+          { id: '4', name: 'Envase Yogurt 1L', provider: 'PackMaster', quantity: 500, unit: 'Uds', expiryDate: 'N/A', type: 'empaque', minThreshold: 100 },
+        ]);
+      }
+      setLoading(false);
+    };
+    load();
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -17,10 +63,121 @@ const MateriaPrima: React.FC = () => {
           <h2 className="text-2xl font-bold text-brand">Materia Prima</h2>
           <p className="text-slate-500">Gestión de inventario e insumos</p>
         </div>
-        <button className="bg-brand text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-brand/20 hover:bg-black transition-all">
+        <button
+          onClick={() => setShowForm(true)}
+          className="bg-brand text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-brand/20 hover:bg-black transition-all"
+        >
           + Nuevo Ingreso
         </button>
       </div>
+
+      {loading && (
+        <div className="p-4 bg-white rounded-xl border text-sm">Cargando…</div>
+      )}
+      {!loading && error && (
+        <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded-xl text-sm">{error}</div>
+      )}
+
+      {showForm && (
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+          <h3 className="text-sm font-bold text-brand mb-4 uppercase tracking-widest">Nuevo Ingreso</h3>
+          {!hasSupabaseEnv && (
+            <p className="text-[12px] text-red-600 mb-3">Configura SUPABASE_URL y SUPABASE_ANON_KEY para guardar en la nube.</p>
+          )}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <input className="bg-slate-50 border border-slate-200 p-3 rounded-xl" placeholder="Nombre"
+              value={form.name} onChange={(e)=>setForm({...form, name: e.target.value})} />
+            <input className="bg-slate-50 border border-slate-200 p-3 rounded-xl" placeholder="Proveedor"
+              value={form.provider} onChange={(e)=>setForm({...form, provider: e.target.value})} />
+            <div className="flex gap-2">
+              <input className="bg-slate-50 border border-slate-200 p-3 rounded-xl w-full" placeholder="Cantidad"
+                type="number" value={form.quantity} onChange={(e)=>setForm({...form, quantity: e.target.value})} />
+              <input className="bg-slate-50 border border-slate-200 p-3 rounded-xl w-28" placeholder="Unidad"
+                value={form.unit} onChange={(e)=>setForm({...form, unit: e.target.value})} />
+            </div>
+            <input className="bg-slate-50 border border-slate-200 p-3 rounded-xl" placeholder="Vencimiento (YYYY-MM-DD)"
+              value={form.expiry_date} onChange={(e)=>setForm({...form, expiry_date: e.target.value})} />
+            <select className="bg-slate-50 border border-slate-200 p-3 rounded-xl"
+              value={form.type} onChange={(e)=>setForm({...form, type: e.target.value})}>
+              <option value="leche">Leche</option>
+              <option value="insumo">Insumo</option>
+              <option value="empaque">Empaque</option>
+            </select>
+            <input className="bg-slate-50 border border-slate-200 p-3 rounded-xl" placeholder="Stock mínimo"
+              type="number" value={form.min_threshold} onChange={(e)=>setForm({...form, min_threshold: e.target.value})} />
+          </div>
+          <div className="mt-4 flex gap-3">
+            <button
+              disabled={saving}
+              onClick={async ()=>{
+                setSaving(true);
+                setError(null);
+                try {
+                  if (hasSupabaseEnv && supabase) {
+                    const payload = {
+                      name: form.name.trim(),
+                      provider: form.provider.trim() || null,
+                      quantity: Number(form.quantity || 0),
+                      unit: form.unit.trim(),
+                      expiry_date: form.expiry_date ? form.expiry_date : null,
+                      type: form.type as any,
+                      min_threshold: Number(form.min_threshold || 0),
+                    };
+                    const { error } = await supabase.from('materials').insert(payload);
+                    if (error) throw new Error(error.message);
+                    const { data } = await supabase
+                      .from('materials')
+                      .select('id,name,provider,quantity,unit,expiry_date,type,min_threshold')
+                      .order('name', { ascending: true });
+                    const mapped: RawMaterial[] = (data || []).map((m: any) => ({
+                      id: m.id,
+                      name: m.name,
+                      provider: m.provider ?? '',
+                      quantity: Number(m.quantity ?? 0),
+                      unit: m.unit ?? '',
+                      expiryDate: m.expiry_date ? String(m.expiry_date) : 'N/A',
+                      type: m.type,
+                      minThreshold: Number(m.min_threshold ?? 0),
+                    }));
+                    setMaterials(mapped);
+                    setShowForm(false);
+                    setForm({name:'',provider:'',quantity:'',unit:'',expiry_date:'',type:'insumo',min_threshold:''});
+                  } else {
+                    const id = String(Date.now());
+                    const m: RawMaterial = {
+                      id,
+                      name: form.name,
+                      provider: form.provider,
+                      quantity: Number(form.quantity || 0),
+                      unit: form.unit,
+                      expiryDate: form.expiry_date || 'N/A',
+                      type: form.type as any,
+                      minThreshold: Number(form.min_threshold || 0),
+                    };
+                    setMaterials(prev => [m, ...prev]);
+                    setShowForm(false);
+                    setForm({name:'',provider:'',quantity:'',unit:'',expiry_date:'',type:'insumo',min_threshold:''});
+                  }
+                } catch (e:any) {
+                  setError(e.message || 'No se pudo guardar');
+                } finally {
+                  setSaving(false);
+                }
+              }}
+              className="bg-brand text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-brand/20 hover:bg-black transition-all"
+            >
+              Guardar
+            </button>
+            <button
+              disabled={saving}
+              onClick={()=>setShowForm(false)}
+              className="bg-slate-100 text-slate-700 px-5 py-2.5 rounded-xl text-sm font-bold border"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="hidden md:block bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <table className="w-full text-left text-sm">
