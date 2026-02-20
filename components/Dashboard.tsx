@@ -104,10 +104,10 @@ const Dashboard: React.FC = () => {
 
   const pieData = useMemo(() => {
     if (recipes.length === 0 || orders.length === 0) return [];
-    const nameById = new Map(recipes.map(r => [r.id, r.name]));
+    const nameById = new Map<string, string>(recipes.map(r => [r.id, r.name]));
     const totals = new Map<string, number>();
     orders.forEach(o => {
-      const n = nameById.get(o.recipe_id) || 'Otra';
+      const n: string = nameById.get(o.recipe_id) || 'Otra';
       totals.set(n, (totals.get(n) || 0) + 1);
     });
     return Array.from(totals.entries()).map(([name, value]) => ({ name, value }));
