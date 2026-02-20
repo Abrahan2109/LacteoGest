@@ -45,3 +45,22 @@ export interface ProductionOrder {
   quantityProduced: number;
   waste: number;
 }
+
+export interface OrderItem {
+  id: string;
+  orderId: string;
+  recipeId: string;
+  quantity: number;
+  unit: string;
+}
+
+export interface Order {
+  id: string;
+  orderNumber: string;
+  clientName: string;
+  orderDate: string;
+  deliveryDate: string | null;
+  status: string;
+  productionBatch?: string | null;
+  items: OrderItem[];
+}

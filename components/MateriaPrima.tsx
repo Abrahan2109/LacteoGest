@@ -25,8 +25,11 @@ const MateriaPrima: React.FC = () => {
   const [editQuantity, setEditQuantity] = useState<string>('');
   const [editMinThreshold, setEditMinThreshold] = useState<string>('');
   const [editSaving, setEditSaving] = useState<boolean>(false);
+   const [editName, setEditName] = useState<string>('');
+   const [editProvider, setEditProvider] = useState<string>('');
   const [presentations, setPresentations] = useState<Record<string, UiPresentation[]>>({});
   const [hasPresentationsTable, setHasPresentationsTable] = useState<boolean>(true);
+  const [detailMaterialId, setDetailMaterialId] = useState<string | null>(null);
   const [form, setForm] = useState({
     name: '',
     provider: '',
@@ -166,6 +169,38 @@ const MateriaPrima: React.FC = () => {
     });
   };
 
+  const handleDeleteMaterial = async (material: RawMaterial) => {
+    if (!window.confirm('¿Eliminar este insumo y todas sus presentaciones?')) return;
+    setEditSaving(true);
+    setError(null);
+    try {
+      if (hasSupabaseEnv && supabase) {
+        const res = await supabase.from('materials').delete().eq('id', material.id);
+        if (res.error) throw new Error(res.error.message);
+      }
+      setMaterials(prev => prev.filter(m => m.id !== material.id));
+      setPresentations(prev => {
+        const copy = { ...prev };
+        delete copy[material.id];
+        return copy;
+      });
+      if (detailMaterialId === material.id) {
+        setDetailMaterialId(null);
+      }
+      if (editMaterial?.id === material.id) {
+        setEditMaterial(null);
+        setEditQuantity('');
+        setEditMinThreshold('');
+        setEditName('');
+        setEditProvider('');
+      }
+    } catch (e: any) {
+      setError(e.message || 'No se pudo eliminar');
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
   const handleSaveEdit = async () => {
     if (!editMaterial) return;
     setEditSaving(true);
@@ -176,7 +211,12 @@ const MateriaPrima: React.FC = () => {
       if (hasSupabaseEnv && supabase) {
         const matsRes = await supabase
           .from('materials')
-          .update({ quantity, min_threshold: minThreshold })
+          .update({
+            name: editName.trim() || editMaterial.name,
+            provider: editProvider.trim() || null,
+            quantity,
+            min_threshold: minThreshold,
+          })
           .eq('id', editMaterial.id);
         if (matsRes.error) throw new Error(matsRes.error.message);
         if (hasPresentationsTable) {
@@ -280,12 +320,22 @@ const MateriaPrima: React.FC = () => {
       }
       setMaterials(prev =>
         prev.map(m =>
-          m.id === editMaterial.id ? { ...m, quantity, minThreshold } : m
+          m.id === editMaterial.id
+            ? {
+                ...m,
+                name: editName.trim() || editMaterial.name,
+                provider: editProvider.trim() || m.provider,
+                quantity,
+                minThreshold,
+              }
+            : m
         )
       );
       setEditMaterial(null);
       setEditQuantity('');
       setEditMinThreshold('');
+      setEditName('');
+      setEditProvider('');
     } catch (e: any) {
       setError(e.message || 'No se pudo actualizar');
     } finally {
@@ -432,6 +482,21 @@ const MateriaPrima: React.FC = () => {
             {materials.map((m) => {
               const isLowStock = m.quantity < m.minThreshold;
               const isEditing = editMaterial?.id === m.id;
+              const presList = (presentations[m.id] || []).filter(p => !p.deleted);
+              const totalRealQuantity = presList.reduce(
+                (acc, p) =>
+                  acc +
+                  (p.availablePackages || 0) * (p.packageQuantity || 0),
+                0
+              );
+              const hasRealQuantity = presList.length > 0 && totalRealQuantity > 0;
+              const realUnit =
+                presList[0]?.packageUnit || m.unit;
+              const totalPackages = presList.reduce(
+                (acc, p) => acc + (p.availablePackages || 0),
+                0
+              );
+              const isDetailOpen = detailMaterialId === m.id;
               return (
                 <React.Fragment key={m.id}>
                   <tr className={`hover:bg-slate-50 transition-colors ${isLowStock ? 'bg-red-50/30' : ''}`}>
@@ -454,7 +519,17 @@ const MateriaPrima: React.FC = () => {
                       </span>
                     </td>
                     <td className={`px-6 py-4 text-center font-mono font-bold ${isLowStock ? 'text-red-600 text-lg' : 'text-brand'}`}>
-                      {m.quantity} {m.unit}
+                      <div className="flex flex-col items-center gap-0.5">
+                        <span>
+                          {hasRealQuantity ? totalRealQuantity : m.quantity}{' '}
+                          {hasRealQuantity ? realUnit : m.unit}
+                        </span>
+                        {hasRealQuantity && (
+                          <span className="text-[10px] font-normal text-slate-400">
+                            {totalPackages} presentaciones
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4 text-center text-slate-400 font-mono text-xs">
                       {m.minThreshold} {m.unit}
@@ -463,22 +538,102 @@ const MateriaPrima: React.FC = () => {
                       {m.expiryDate}
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <button
-                        className="text-accent hover:text-brand font-bold uppercase text-[10px]"
-                        onClick={() => {
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          className="text-[10px] font-bold uppercase text-slate-400 hover:text-brand"
+                          onClick={() =>
+                            setDetailMaterialId(isDetailOpen ? null : m.id)
+                          }
+                        >
+                          {isDetailOpen ? 'Ocultar detalle' : 'Ver detalle'}
+                        </button>
+                        <button
+                          className="text-accent hover:text-brand font-bold uppercase text-[10px]"
+                          onClick={() => {
                           setEditMaterial(m);
                           setEditQuantity(String(m.quantity));
                           setEditMinThreshold(String(m.minThreshold));
-                        }}
-                      >
-                        {isEditing ? 'Cerrar' : 'Gestionar'}
-                      </button>
+                          setEditName(m.name);
+                          setEditProvider(m.provider);
+                          }}
+                        >
+                          {isEditing ? 'Cerrar' : 'Gestionar'}
+                        </button>
+                      </div>
                     </td>
                   </tr>
+                  {isDetailOpen && (
+                    <tr className="bg-slate-50/60">
+                      <td colSpan={6} className="px-6 pb-4 pt-0">
+                        <div className="border-t border-slate-200 pt-3 mt-1 space-y-2">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase">
+                            Detalle de presentaciones disponibles
+                          </p>
+                          {presList.filter(p => (p.availablePackages || 0) > 0).length === 0 ? (
+                            <p className="text-xs text-slate-400">
+                              Sin presentaciones con stock disponible.
+                            </p>
+                          ) : (
+                            <div className="space-y-1">
+                              {presList
+                                .filter(p => (p.availablePackages || 0) > 0)
+                                .map(p => (
+                                  <div
+                                    key={p.id}
+                                    className="text-xs text-slate-700 flex justify-between items-center bg-white border border-slate-200 rounded-lg px-3 py-2"
+                                  >
+                                    <div className="flex-1">
+                                      <p className="font-semibold">
+                                        {p.presentation || 'Sin nombre'}
+                                      </p>
+                                      <p className="text-[10px] text-slate-400">
+                                        {p.packageQuantity || 0}{' '}
+                                        {p.packageUnit || realUnit} por presentación
+                                      </p>
+                                    </div>
+                                    <div className="text-right text-[11px]">
+                                      <p className="font-bold text-brand">
+                                        {p.availablePackages || 0} disp.
+                                      </p>
+                                      <p className="text-[10px] text-slate-400">
+                                        Total:{' '}
+                                        {(
+                                          (p.availablePackages || 0) *
+                                          (p.packageQuantity || 0)
+                                        ).toFixed(2)}{' '}
+                                        {p.packageUnit || realUnit}
+                                      </p>
+                                    </div>
+                                  </div>
+                                ))}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
                   {isEditing && (
                     <tr className="bg-slate-50">
                       <td colSpan={6} className="px-6 pb-4 pt-0">
                         <div className="border-t border-slate-200 pt-3 mt-1 space-y-4">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-end">
+                            <div>
+                              <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Título</p>
+                              <input
+                                className="w-full bg-white border border-slate-200 p-2.5 rounded-xl text-dark font-bold focus:ring-2 focus:ring-brand outline-none"
+                                value={editName}
+                                onChange={e => setEditName(e.target.value)}
+                              />
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Subtítulo</p>
+                              <input
+                                className="w-full bg-white border border-slate-200 p-2.5 rounded-xl text-[12px] focus:ring-2 focus:ring-brand outline-none"
+                                value={editProvider}
+                                onChange={e => setEditProvider(e.target.value)}
+                              />
+                            </div>
+                          </div>
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
                             <div>
                               <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Cantidad disponible</p>
@@ -512,10 +667,19 @@ const MateriaPrima: React.FC = () => {
                                   setEditMaterial(null);
                                   setEditQuantity('');
                                   setEditMinThreshold('');
+                                  setEditName('');
+                                  setEditProvider('');
                                 }}
                                 className="bg-slate-100 text-slate-700 px-4 py-2 rounded-xl text-[11px] font-bold border"
                               >
                                 Cancelar
+                              </button>
+                              <button
+                                disabled={editSaving}
+                                onClick={() => editMaterial && handleDeleteMaterial(editMaterial)}
+                                className="bg-red-600 text-white px-4 py-2 rounded-xl text-[11px] font-bold"
+                              >
+                                Eliminar
                               </button>
                             </div>
                           </div>
@@ -652,6 +816,21 @@ const MateriaPrima: React.FC = () => {
         {materials.map((m) => {
           const isLowStock = m.quantity < m.minThreshold;
           const isEditing = editMaterial?.id === m.id;
+          const presList = (presentations[m.id] || []).filter(p => !p.deleted);
+          const totalRealQuantity = presList.reduce(
+            (acc, p) =>
+              acc +
+              (p.availablePackages || 0) * (p.packageQuantity || 0),
+            0
+          );
+          const hasRealQuantity = presList.length > 0 && totalRealQuantity > 0;
+          const realUnit =
+            presList[0]?.packageUnit || m.unit;
+          const totalPackages = presList.reduce(
+            (acc, p) => acc + (p.availablePackages || 0),
+            0
+          );
+          const isDetailOpen = detailMaterialId === m.id;
           return (
             <div key={m.id} className={`bg-white p-4 rounded-2xl border shadow-sm border-l-4 ${isLowStock ? 'border-red-600 bg-red-50/10' : 'border-l-brand border-slate-200'}`}>
               <div className="flex justify-between items-start mb-2">
@@ -663,25 +842,112 @@ const MateriaPrima: React.FC = () => {
                   <p className="text-[10px] text-slate-500 mt-1 uppercase font-semibold">{m.provider}</p>
                 </div>
                 <div className="text-right">
-                  <span className={`font-bold text-lg ${isLowStock ? 'text-red-600' : 'text-brand'}`}>{m.quantity}</span>
-                  <span className="text-[10px] font-medium text-slate-400 ml-1">{m.unit}</span>
+                  <div className="flex flex-col items-end gap-0.5">
+                    <span className={`font-bold text-lg ${isLowStock ? 'text-red-600' : 'text-brand'}`}>
+                      {hasRealQuantity ? totalRealQuantity : m.quantity}
+                    </span>
+                    <span className="text-[10px] font-medium text-slate-400 ml-1">
+                      {hasRealQuantity ? realUnit : m.unit}
+                    </span>
+                    {hasRealQuantity && (
+                      <span className="text-[9px] text-slate-400">
+                        {totalPackages} presentaciones
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
               <div className="flex justify-between items-end border-t border-slate-50 pt-3 mt-1">
                 <span className="text-[9px] text-slate-400 font-bold uppercase italic">Mínimo: {m.minThreshold} {m.unit}</span>
-                <button
-                  className={`${isLowStock ? 'bg-red-600 text-white' : 'bg-accent/20 text-brand'} px-3 py-1 rounded-lg text-[10px] font-bold uppercase`}
-                  onClick={() => {
-                    setEditMaterial(m);
-                    setEditQuantity(String(m.quantity));
-                    setEditMinThreshold(String(m.minThreshold));
-                  }}
-                >
-                  {isEditing ? 'CERRAR' : isLowStock ? 'REPONER' : 'EDITAR'}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    className="bg-slate-100 text-slate-700 px-3 py-1 rounded-lg text-[10px] font-bold uppercase"
+                    onClick={() =>
+                      setDetailMaterialId(isDetailOpen ? null : m.id)
+                    }
+                  >
+                    {isDetailOpen ? 'OCULTAR' : 'DETALLE'}
+                  </button>
+                  <button
+                    className={`${isLowStock ? 'bg-red-600 text-white' : 'bg-accent/20 text-brand'} px-3 py-1 rounded-lg text-[10px] font-bold uppercase`}
+                    onClick={() => {
+                      setEditMaterial(m);
+                      setEditQuantity(String(m.quantity));
+                      setEditMinThreshold(String(m.minThreshold));
+                      setEditName(m.name);
+                      setEditProvider(m.provider);
+                    }}
+                  >
+                    {isEditing ? 'CERRAR' : isLowStock ? 'REPONER' : 'EDITAR'}
+                  </button>
+                </div>
               </div>
+              {isDetailOpen && (
+                <div className="mt-3 pt-3 border-t border-slate-100 space-y-2">
+                  <p className="text-[9px] font-bold text-slate-400 uppercase mb-1">
+                    Detalle de presentaciones disponibles
+                  </p>
+                  {presList.filter(p => (p.availablePackages || 0) > 0).length === 0 ? (
+                    <p className="text-[11px] text-slate-400">
+                      Sin presentaciones con stock disponible.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {presList
+                        .filter(p => (p.availablePackages || 0) > 0)
+                        .map(p => (
+                          <div
+                            key={p.id}
+                            className="bg-white border border-slate-200 rounded-xl p-3 flex justify-between items-center"
+                          >
+                            <div className="flex-1 pr-2">
+                              <p className="text-[11px] font-semibold">
+                                {p.presentation || 'Sin nombre'}
+                              </p>
+                              <p className="text-[9px] text-slate-400">
+                                {p.packageQuantity || 0}{' '}
+                                {p.packageUnit || realUnit} por presentación
+                              </p>
+                            </div>
+                            <div className="text-right text-[10px]">
+                              <p className="font-bold text-brand">
+                                {p.availablePackages || 0} disp.
+                              </p>
+                              <p className="text-[9px] text-slate-400">
+                                Total:{' '}
+                                {(
+                                  (p.availablePackages || 0) *
+                                  (p.packageQuantity || 0)
+                                ).toFixed(2)}{' '}
+                                {p.packageUnit || realUnit}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  )}
+                </div>
+              )}
               {isEditing && (
                 <div className="mt-3 pt-3 border-t border-slate-100 space-y-3">
+                  <div className="grid grid-cols-1 gap-2">
+                    <div>
+                      <p className="text-[9px] font-bold text-slate-400 uppercase mb-1">Título</p>
+                      <input
+                        className="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-[12px] font-semibold focus:ring-2 focus:ring-brand outline-none"
+                        value={editName}
+                        onChange={e => setEditName(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-bold text-slate-400 uppercase mb-1">Subtítulo</p>
+                      <input
+                        className="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-[11px] focus:ring-2 focus:ring-brand outline-none"
+                        value={editProvider}
+                        onChange={e => setEditProvider(e.target.value)}
+                      />
+                    </div>
+                  </div>
                   <div className="flex gap-2">
                     <div className="flex-1">
                       <p className="text-[9px] font-bold text-slate-400 uppercase mb-1">Cantidad</p>
@@ -841,10 +1107,19 @@ const MateriaPrima: React.FC = () => {
                         setEditMaterial(null);
                         setEditQuantity('');
                         setEditMinThreshold('');
+                        setEditName('');
+                        setEditProvider('');
                       }}
                       className="bg-slate-100 text-slate-700 px-4 py-2 rounded-xl text-[11px] font-bold border"
                     >
                       Cancelar
+                    </button>
+                    <button
+                      disabled={editSaving}
+                      onClick={() => editMaterial && handleDeleteMaterial(editMaterial)}
+                      className="bg-red-600 text-white px-4 py-2 rounded-xl text-[11px] font-bold"
+                    >
+                      Eliminar
                     </button>
                   </div>
                 </div>

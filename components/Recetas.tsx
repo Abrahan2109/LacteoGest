@@ -210,6 +210,28 @@ const Recetas: React.FC = () => {
     setError(null);
     try {
       if (hasSupabaseEnv && supabase) {
+        const isNew = recipe.id.startsWith('temp-');
+        let recipeIdToUse = recipe.id;
+
+        if (isNew) {
+          const insertRes = await supabase
+            .from('recipes')
+            .insert({
+              name: recipe.name || 'Nueva fórmula',
+              notes: recipe.notes || null,
+            })
+            .select('id')
+            .single();
+          if (insertRes.error) throw new Error(insertRes.error.message);
+          recipeIdToUse = insertRes.data.id;
+        } else {
+          const updateRes = await supabase
+            .from('recipes')
+            .update({ name: recipe.name, notes: recipe.notes })
+            .eq('id', recipe.id);
+          if (updateRes.error) throw new Error(updateRes.error.message);
+        }
+
         const existing = recipe.ingredients.filter(
           ing => !ing.id.startsWith('temp-')
         );
@@ -239,7 +261,7 @@ const Recetas: React.FC = () => {
           ),
           ...toInsert.map(ing =>
             supabase.from('recipe_ingredients').insert({
-              recipe_id: recipe.id,
+              recipe_id: recipeIdToUse,
               material_name: ing.materialName,
               amount_per_liter: ing.amountPerLiter,
               unit: ing.unit,
@@ -249,10 +271,6 @@ const Recetas: React.FC = () => {
               package_cost: ing.packageCost || null,
             })
           ),
-          supabase
-            .from('recipes')
-            .update({ notes: recipe.notes })
-            .eq('id', recipe.id),
         ]);
       }
       if (hasSupabaseEnv && supabase) {
@@ -278,7 +296,7 @@ const Recetas: React.FC = () => {
         }));
         setFormulas(mapped);
       }
-      setEditingRecipeId(recipeId);
+      setEditingRecipeId(null);
     } catch (e: any) {
       setError(e.message || 'No se pudieron guardar los cambios de la fórmula');
     } finally {
@@ -286,14 +304,35 @@ const Recetas: React.FC = () => {
     }
   };
 
+  const handleAddRecipe = () => {
+    const tempId = `temp-recipe-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const newRecipe: UiRecipe = {
+      id: tempId,
+      name: '',
+      ingredients: [],
+      notes: '',
+    };
+    setFormulas(prev => [newRecipe, ...prev]);
+    setEditingRecipeId(tempId);
+  };
+
+  const handleChangeRecipeName = (recipeId: string, value: string) => {
+    setFormulas(prev =>
+      prev.map(r => (r.id === recipeId ? { ...r, name: value } : r))
+    );
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-2xl font-bold text-brand">Formulaciones</h2>
-          <p className="text-slate-500">Unidad Base: 1 Litro de Leche</p>
+          <p className="text-slate-500">Base de cálculo: coeficientes por 1 litro de leche</p>
         </div>
-        <button className="bg-brand text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-brand/20 hover:bg-black transition-all">
+        <button
+          onClick={handleAddRecipe}
+          className="bg-brand text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-brand/20 hover:bg-black transition-all"
+        >
           + Nueva Fórmula
         </button>
       </div>
@@ -317,9 +356,20 @@ const Recetas: React.FC = () => {
           }, 0);
           return (
           <div key={recipe.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-            <div className="p-5 border-b border-slate-100 bg-brand text-white">
-              <h3 className="text-lg font-bold">{recipe.name}</h3>
-              <p className="text-[10px] uppercase font-bold text-accent italic">Coeficientes por Litro</p>
+            <div className="p-5 border-b border-slate-100 bg-brand text-white space-y-1">
+              {isEditing ? (
+                <input
+                  className="w-full bg-white/10 border border-white/30 p-2 rounded-lg text-sm font-bold placeholder:text-white/60"
+                  placeholder="Nombre de la fórmula"
+                  value={recipe.name}
+                  onChange={e => handleChangeRecipeName(recipe.id, e.target.value)}
+                />
+              ) : (
+                <h3 className="text-lg font-bold">{recipe.name}</h3>
+              )}
+              <p className="text-[10px] uppercase font-bold text-accent italic">
+                Base de cálculo: coeficientes por 1 litro de leche
+              </p>
             </div>
             <div className="p-5 flex-1 space-y-4">
               <div className="flex justify-between items-center text-[11px] text-slate-200 bg-brand/80 px-3 py-2 rounded-xl mb-2">

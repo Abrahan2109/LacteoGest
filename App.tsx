@@ -5,6 +5,7 @@ import Dashboard from './components/Dashboard';
 import MateriaPrima from './components/MateriaPrima';
 import Produccion from './components/Produccion';
 import Recetas from './components/Recetas';
+import Pedidos from './components/Pedidos';
 import { AppTab } from './types';
 
 const App: React.FC = () => {
@@ -29,13 +30,7 @@ const App: React.FC = () => {
           </div>
         );
       case AppTab.PEDIDOS:
-        return (
-          <div className="flex flex-col items-center justify-center min-h-[60vh] text-brand/30 text-center px-4">
-            <span className="text-7xl mb-6">📋</span>
-            <p className="text-xl font-bold text-brand italic">Gestión de Pedidos</p>
-            <p className="text-sm text-slate-400 max-w-xs mt-2">Atención a clientes y preventa institucional.</p>
-          </div>
-        );
+        return <Pedidos />;
       case AppTab.VENTAS:
         return (
           <div className="flex flex-col items-center justify-center min-h-[60vh] text-brand/30 text-center px-4">
