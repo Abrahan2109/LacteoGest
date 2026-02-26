@@ -61,6 +61,8 @@ export interface Order {
   orderDate: string;
   deliveryDate: string | null;
   status: string;
+  paymentStatus?: 'pendiente' | 'pagado';
+  deliveryStatus?: 'pendiente' | 'entregado';
   productionBatch?: string | null;
   items: OrderItem[];
 }

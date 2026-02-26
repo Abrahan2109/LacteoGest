@@ -1,10 +1,12 @@
 
 import React, { useEffect, useState } from 'react';
 import { hasSupabaseEnv, supabase } from '../supabaseClient';
+import { RawMaterial } from '../types';
 
 interface UiIngredient {
   id: string;
   materialName: string;
+  materialId?: string;
   amountPerLiter: number;
   unit: string;
   deleted?: boolean;
@@ -23,6 +25,7 @@ interface UiRecipe {
 
 const Recetas: React.FC = () => {
   const [formulas, setFormulas] = useState<UiRecipe[]>([]);
+  const [materials, setMaterials] = useState<RawMaterial[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [editingRecipeId, setEditingRecipeId] = useState<string | null>(null);
@@ -34,9 +37,26 @@ const Recetas: React.FC = () => {
       setError(null);
       try {
         if (hasSupabaseEnv && supabase) {
-          const res = await supabase
-            .from('recipes')
-            .select('id,name,notes,recipe_ingredients(id,material_name,amount_per_liter,unit,presentation,brand,package_quantity,package_cost)');
+          const [matsRes, res] = await Promise.all([
+            supabase.from('materials').select('id,name,unit,quantity'),
+            supabase
+              .from('recipes')
+              .select('id,name,notes,recipe_ingredients(id,material_name,material_id,amount_per_liter,unit)')
+          ]);
+
+          if (matsRes.error) throw new Error(matsRes.error.message);
+          const mappedMaterials: RawMaterial[] = (matsRes.data || []).map((m: any) => ({
+            id: m.id,
+            name: m.name,
+            provider: '',
+            quantity: Number(m.quantity || 0),
+            unit: m.unit || '',
+            expiryDate: '',
+            type: 'insumo',
+            minThreshold: 0,
+          }));
+          setMaterials(mappedMaterials);
+
           if (res.error) throw new Error(res.error.message);
           const mapped: UiRecipe[] = (res.data || []).map((r: any) => ({
             id: r.id,
@@ -44,13 +64,14 @@ const Recetas: React.FC = () => {
             ingredients: (r.recipe_ingredients || []).map((ing: any) => ({
               id: ing.id,
               materialName: ing.material_name || '',
+              materialId: ing.material_id || undefined,
               amountPerLiter: Number(ing.amount_per_liter || 0),
               unit: ing.unit || '',
               deleted: false,
-              presentation: ing.presentation || '',
-              brand: ing.brand || '',
-              packageQuantity: ing.package_quantity ? Number(ing.package_quantity) : 0,
-              packageCost: ing.package_cost ? Number(ing.package_cost) : 0,
+              presentation: '',
+              brand: '',
+              packageQuantity: 0,
+              packageCost: 0,
             })),
             notes:
               (r as any).notes ??
@@ -114,7 +135,7 @@ const Recetas: React.FC = () => {
   const handleChangeIngredientField = (
     recipeId: string,
     ingredientId: string,
-    field: 'materialName' | 'unit',
+    field: 'materialName' | 'unit' | 'materialId',
     value: string
   ) => {
     setFormulas(prev =>
@@ -247,12 +268,9 @@ const Recetas: React.FC = () => {
               .from('recipe_ingredients')
               .update({
                 material_name: ing.materialName,
+                material_id: ing.materialId || null,
                 amount_per_liter: ing.amountPerLiter,
                 unit: ing.unit,
-                presentation: ing.presentation || null,
-                brand: ing.brand || null,
-                package_quantity: ing.packageQuantity || null,
-                package_cost: ing.packageCost || null,
               })
               .eq('id', ing.id)
           ),
@@ -263,12 +281,9 @@ const Recetas: React.FC = () => {
             supabase.from('recipe_ingredients').insert({
               recipe_id: recipeIdToUse,
               material_name: ing.materialName,
+              material_id: ing.materialId || null,
               amount_per_liter: ing.amountPerLiter,
               unit: ing.unit,
-              presentation: ing.presentation || null,
-              brand: ing.brand || null,
-              package_quantity: ing.packageQuantity || null,
-              package_cost: ing.packageCost || null,
             })
           ),
         ]);
@@ -276,7 +291,7 @@ const Recetas: React.FC = () => {
       if (hasSupabaseEnv && supabase) {
         const res = await supabase
           .from('recipes')
-          .select('id,name,notes,recipe_ingredients(id,material_name,amount_per_liter,unit,presentation,brand,package_quantity,package_cost)');
+          .select('id,name,notes,recipe_ingredients(id,material_name,material_id,amount_per_liter,unit)');
         if (res.error) throw new Error(res.error.message);
         const mapped: UiRecipe[] = (res.data || []).map((r: any) => ({
           id: r.id,
@@ -284,13 +299,14 @@ const Recetas: React.FC = () => {
           ingredients: (r.recipe_ingredients || []).map((ing: any) => ({
             id: ing.id,
             materialName: ing.material_name || '',
+            materialId: ing.material_id || undefined,
             amountPerLiter: Number(ing.amount_per_liter || 0),
             unit: ing.unit || '',
             deleted: false,
-            presentation: ing.presentation || '',
-            brand: ing.brand || '',
-            packageQuantity: ing.package_quantity ? Number(ing.package_quantity) : 0,
-            packageCost: ing.package_cost ? Number(ing.package_cost) : 0,
+            presentation: '',
+            brand: '',
+            packageQuantity: 0,
+            packageCost: 0,
           })),
           notes: (r as any).notes ?? '',
         }));
@@ -387,16 +403,31 @@ const Recetas: React.FC = () => {
                           <input
                             className="w-full bg-white border border-slate-200 p-2 rounded-lg text-sm text-slate-700"
                             placeholder="Nombre del componente"
+                            list={`materials-list-${recipe.id}-${ing.id}`}
                             value={ing.materialName}
-                            onChange={e =>
+                            onChange={e => {
+                              const val = e.target.value;
+                              const matched = materials.find(m => m.name.toLowerCase() === val.toLowerCase());
+                              if (matched) {
+                                // Auto-fill unit if matched
+                                handleChangeIngredientField(recipe.id, ing.id, 'unit', matched.unit);
+                                handleChangeIngredientField(recipe.id, ing.id, 'materialId', matched.id);
+                              } else {
+                                handleChangeIngredientField(recipe.id, ing.id, 'materialId', '');
+                              }
                               handleChangeIngredientField(
                                 recipe.id,
                                 ing.id,
                                 'materialName',
-                                e.target.value
-                              )
-                            }
+                                val
+                              );
+                            }}
                           />
+                          <datalist id={`materials-list-${recipe.id}-${ing.id}`}>
+                            {materials.map(m => (
+                              <option key={m.id} value={m.name} />
+                            ))}
+                          </datalist>
                         </div>
                         <div className="flex items-center gap-2">
                           <input

@@ -20,6 +20,12 @@ const Pedidos: React.FC = () => {
   const [unit, setUnit] = useState<string>('L');
 
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
+  const [editClientName, setEditClientName] = useState<string>('');
+  const [editDeliveryDate, setEditDeliveryDate] = useState<string>('');
+  const [editRecipeId, setEditRecipeId] = useState<string>('');
+  const [editQuantity, setEditQuantity] = useState<number>(0);
+  const [editUnit, setEditUnit] = useState<string>('L');
 
   useEffect(() => {
     const load = async () => {
@@ -246,6 +252,125 @@ const Pedidos: React.FC = () => {
     }, 100);
   };
 
+  const handleStartEditOrder = (order: UiOrder) => {
+    const item = order.items[0];
+    setEditingOrderId(order.id);
+    setEditClientName(order.clientName);
+    setEditDeliveryDate(order.deliveryDate || '');
+    setEditRecipeId(item?.recipeId || recipes[0]?.id || '');
+    setEditQuantity(item?.quantity || 0);
+    setEditUnit(item?.unit || 'L');
+  };
+
+  const handleCancelEditOrder = () => {
+    setEditingOrderId(null);
+  };
+
+  const handleSaveOrder = async (order: UiOrder) => {
+    if (!hasSupabaseEnv || !supabase) return;
+    if (!editClientName.trim() || !editRecipeId || editQuantity <= 0) {
+      setError('Completa cliente, producto y cantidad para actualizar el pedido');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const orderUpdate = {
+        client_name: editClientName.trim(),
+        delivery_date: editDeliveryDate || null,
+      };
+      const updOrder = await supabase
+        .from('orders')
+        .update(orderUpdate)
+        .eq('id', order.id);
+      if (updOrder.error) throw new Error(updOrder.error.message);
+
+      const existingItem = order.items[0];
+      if (existingItem) {
+        const updItem = await supabase
+          .from('order_items')
+          .update({
+            recipe_id: editRecipeId,
+            quantity: editQuantity,
+            unit: editUnit,
+          })
+          .eq('id', existingItem.id);
+        if (updItem.error) throw new Error(updItem.error.message);
+      } else {
+        const insItem = await supabase
+          .from('order_items')
+          .insert({
+            order_id: order.id,
+            recipe_id: editRecipeId,
+            quantity: editQuantity,
+            unit: editUnit,
+          })
+          .select('id')
+          .single();
+        if (insItem.error) throw new Error(insItem.error.message);
+        const newItem: OrderItem = {
+          id: insItem.data.id,
+          orderId: order.id,
+          recipeId: editRecipeId,
+          quantity: editQuantity,
+          unit: editUnit,
+        };
+        order.items = [newItem];
+      }
+
+      const recipeName = recipes.find(r => r.id === editRecipeId)?.name || 'Producto';
+      const newSummary = `${recipeName} · ${editQuantity} ${editUnit}`;
+
+      setOrders(prev =>
+        prev.map(o =>
+          o.id === order.id
+            ? {
+                ...o,
+                clientName: editClientName.trim(),
+                deliveryDate: editDeliveryDate || null,
+                items: [
+                  {
+                    id: o.items[0]?.id || order.items[0]?.id || '',
+                    orderId: order.id,
+                    recipeId: editRecipeId,
+                    quantity: editQuantity,
+                    unit: editUnit,
+                  },
+                ],
+                itemSummary: newSummary,
+              }
+            : o
+        )
+      );
+      setEditingOrderId(null);
+    } catch (e: any) {
+      setError(e.message || 'No se pudo actualizar el pedido');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteOrder = async (order: UiOrder) => {
+    if (!hasSupabaseEnv || !supabase) return;
+    if (order.productionBatch) {
+      setError('No se puede eliminar un pedido con orden de producción generada');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await supabase.from('orders').delete().eq('id', order.id);
+      if (res.error) throw new Error(res.error.message);
+      setOrders(prev => prev.filter(o => o.id !== order.id));
+      if (selectedOrderId === order.id) setSelectedOrderId(null);
+      if (editingOrderId === order.id) setEditingOrderId(null);
+    } catch (e: any) {
+      setError(e.message || 'No se pudo eliminar el pedido');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -343,6 +468,7 @@ const Pedidos: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {orders.map(order => {
           const isSelected = selectedOrderId === order.id;
+          const isEditing = editingOrderId === order.id;
           return (
             <div
               key={order.id}
@@ -412,6 +538,107 @@ const Pedidos: React.FC = () => {
                   <p>Pedido: {order.orderNumber}</p>
                   {order.productionBatch && <p>Nro OP / Lote: {order.productionBatch}</p>}
                   <p>Detalle: {order.itemSummary}</p>
+                  <div className="mt-4 border-t border-slate-100 pt-3 space-y-3">
+                    <p className="uppercase font-bold text-slate-400">
+                      Edición de pedido y producto
+                    </p>
+                    {isEditing ? (
+                      <>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase">
+                              Cliente
+                            </label>
+                            <input
+                              className="w-full bg-slate-50 border border-slate-200 p-2 rounded-lg text-xs"
+                              value={editClientName}
+                              onChange={e => setEditClientName(e.target.value)}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase">
+                              Fecha de entrega
+                            </label>
+                            <input
+                              type="date"
+                              className="w-full bg-slate-50 border border-slate-200 p-2 rounded-lg text-xs"
+                              value={editDeliveryDate}
+                              onChange={e => setEditDeliveryDate(e.target.value)}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase">
+                              Producto / Fórmula
+                            </label>
+                            <select
+                              className="w-full bg-slate-50 border border-slate-200 p-2 rounded-lg text-xs"
+                              value={editRecipeId}
+                              onChange={e => setEditRecipeId(e.target.value)}
+                            >
+                              {recipes.map(r => (
+                                <option key={r.id} value={r.id}>
+                                  {r.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase">
+                              Cantidad
+                            </label>
+                            <div className="flex gap-2">
+                              <input
+                                type="number"
+                                className="flex-1 bg-slate-50 border border-slate-200 p-2 rounded-lg text-xs"
+                                value={editQuantity || ''}
+                                onChange={e => setEditQuantity(Number(e.target.value))}
+                              />
+                              <select
+                                className="w-20 bg-slate-50 border border-slate-200 p-2 rounded-lg text-[10px]"
+                                value={editUnit}
+                                onChange={e => setEditUnit(e.target.value)}
+                              >
+                                <option value="L">L</option>
+                                <option value="kg">kg</option>
+                                <option value="u">u</option>
+                              </select>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-2 mt-3">
+                          <button
+                            disabled={saving}
+                            onClick={() => handleSaveOrder(order)}
+                            className="bg-brand text-white text-[11px] font-bold px-4 py-2 rounded-lg uppercase disabled:bg-slate-300"
+                          >
+                            Guardar cambios
+                          </button>
+                          <button
+                            disabled={saving}
+                            onClick={handleCancelEditOrder}
+                            className="bg-white border border-slate-200 text-slate-700 text-[11px] font-bold px-4 py-2 rounded-lg uppercase"
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            disabled={saving || !!order.productionBatch}
+                            onClick={() => handleDeleteOrder(order)}
+                            className="bg-red-600 text-white text-[11px] font-bold px-4 py-2 rounded-lg uppercase disabled:bg-slate-300"
+                          >
+                            Eliminar pedido
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <button
+                        disabled={saving || !hasSupabaseEnv}
+                        onClick={() => handleStartEditOrder(order)}
+                        className="mt-1 bg-white border border-slate-200 text-slate-700 text-[11px] font-bold px-4 py-2 rounded-lg uppercase hover:bg-slate-50"
+                      >
+                        Editar pedido / producto
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -423,4 +650,3 @@ const Pedidos: React.FC = () => {
 };
 
 export default Pedidos;
-

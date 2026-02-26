@@ -6,6 +6,7 @@ import MateriaPrima from './components/MateriaPrima';
 import Produccion from './components/Produccion';
 import Recetas from './components/Recetas';
 import Pedidos from './components/Pedidos';
+import Ventas from './components/Ventas';
 import { AppTab } from './types';
 
 const App: React.FC = () => {
@@ -32,13 +33,7 @@ const App: React.FC = () => {
       case AppTab.PEDIDOS:
         return <Pedidos />;
       case AppTab.VENTAS:
-        return (
-          <div className="flex flex-col items-center justify-center min-h-[60vh] text-brand/30 text-center px-4">
-            <span className="text-7xl mb-6">💰</span>
-            <p className="text-xl font-bold text-brand italic">Módulo de Ventas</p>
-            <p className="text-sm text-slate-400 max-w-xs mt-2">Control de ingresos y flujo de caja ABBA FOODS.</p>
-          </div>
-        );
+        return <Ventas />;
       default:
         return <Dashboard />;
     }
